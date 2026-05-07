@@ -80,18 +80,21 @@ function createTransferRouter({
     try {
       for (const c of file.chunks.sort((a, b) => a.index - b.index)) {
         let lastErr = null;
+        let wrote = false;
         for (const nodeUrl of c.nodes) {
           if (!isNodeHealthy(nodeUrl)) continue;
           try {
             const chunkBuf = await getChunkFromNode(nodeUrl, c.chunkId);
             res.write(chunkBuf);
-            lastErr = null;
+            wrote = true;
             break;
           } catch (e) {
             lastErr = e;
           }
         }
-        if (lastErr) throw lastErr;
+        if (!wrote) {
+          throw lastErr || new Error(`No readable replica for chunk ${c.chunkId} (all target nodes down or missing data)`);
+        }
       }
       res.end();
     } catch (e) {

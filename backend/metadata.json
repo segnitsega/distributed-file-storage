@@ -1,0 +1,20 @@
+{
+  "files": {
+    "90c1bd10-a3dc-4244-8725-e1662ef99de0": {
+      "fileName": "brand-new-resume.pdf",
+      "sizeBytes": 91603,
+      "createdAt": "2026-05-07T23:55:37.116Z",
+      "chunks": [
+        {
+          "index": 0,
+          "chunkId": "4bb784dc47d32c1ff7b998f79a3141f25f95da474147cf93e5de2de665314a19",
+          "nodes": [
+            "http://localhost:8081",
+            "http://localhost:8082",
+            "http://localhost:8083"
+          ]
+        }
+      ]
+    }
+  }
+}
