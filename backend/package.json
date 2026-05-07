@@ -1,11 +1,20 @@
 {
-  "name": "backend",
+  "name": "distributed-file-sharing-backend",
+  "private": true,
   "version": "1.0.0",
-  "description": "",
-  "main": "server.js",
+  "type": "commonjs",
+  "main": "master.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "dev": "node server.js",
+    "start:master": "node master.js",
+    "start:node": "node storage-node.js",
+    "start:nodes": "bash ./scripts/start-nodes.sh",
+    "start:nodes:terminals": "bash ./scripts/start-nodes-terminals.sh"
   },
-  "author": "",
-  "license": "ISC"
+  "dependencies": {
+    "cors": "^2.8.5",
+    "express": "^4.19.2",
+    "multer": "^1.4.5-lts.1",
+    "uuid": "^9.0.1"
+  }
 }
