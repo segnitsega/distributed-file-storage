@@ -755,3 +755,155 @@ npm start
 6. Delete file and confirm list update
 
 ---
+## 15) Frontend User Guide
+
+### 15.1 Upload
+
+- Click file input and select file.
+- Click **Upload**.
+- Wait for file list refresh.
+
+### 15.2 Download
+
+- Locate desired file row.
+- Click **Download**.
+- Browser downloads from master endpoint.
+
+### 15.3 Delete
+
+- Click **Delete** on target file row.
+- UI refreshes list on success.
+
+### 15.4 Node Status Interpretation
+
+- Green status: healthy node reachable by master.
+- Red status: master cannot reach node.
+- Uploads require at least 2 healthy nodes.
+
+---
+
+## 16) Observability and Operations
+
+### 16.1 Logs
+
+Current logging is console-based:
+
+- Master logs startup and configured storage URLs.
+- Storage node logs startup with node ID and data directory.
+
+### 16.2 Operational Health Checks
+
+- Node-level: `GET http://localhost:8081/health`
+- System-level: `GET http://localhost:8080/nodes/status`
+
+### 16.3 Useful Manual Checks
+
+- Verify metadata file updates after upload/delete.
+- Verify chunk files created in each node data directory.
+- Stop one node and test download fallback behavior.
+
+### 16.4 Incident Handling Basics
+
+If uploads fail:
+
+1. Check `/nodes/status`
+2. Ensure at least 2 healthy nodes
+3. Verify port conflicts are not present
+4. Verify storage node processes are running
+
+---
+
+## 17) Performance and Scalability Notes
+
+### 17.1 Current Behavior
+
+- Chunking allows large-file handling in bounded unit operations.
+- Replication doubles write operations per chunk.
+- Download reconstructs chunks sequentially.
+
+### 17.2 Scaling Strategy
+
+1. Start additional storage node instances.
+2. Include their URLs in `STORAGE_NODES`.
+3. Restart master with new configuration.
+
+### 17.3 Potential Bottlenecks
+
+- Master is a centralized control/data routing point.
+- Metadata in local JSON file is not ideal for high concurrency.
+- Upload buffering in memory (`multer.memoryStorage`) can limit very large-file throughput.
+
+### 17.4 Optimization Ideas
+
+- Stream upload chunking instead of full in-memory buffer.
+- Move metadata to persistent DB (PostgreSQL, Redis, etc.).
+- Add replication repair worker for unhealthy replica replacement.
+- Add caching for frequently downloaded chunk metadata.
+
+### 17.5 Capacity Planning Guidance
+
+For class projects and demos, the current defaults are acceptable. For larger testing and realistic usage, estimate resource requirements before deployment.
+
+#### Storage Capacity Estimate
+
+Because replication factor is 2, raw storage used in nodes is approximately:
+
+`Total Stored Bytes ~= Uploaded Bytes x 2`
+
+Example:
+
+- User data uploaded: `100 GB`
+- Replica factor: `2`
+- Required total node disk (excluding metadata/log overhead): `~200 GB`
+
+Add at least 20-30% free space headroom for safe operation and temporary files.
+
+#### Memory Capacity Estimate (Current Upload Model)
+
+Uploads are handled in memory (`multer.memoryStorage`), so per-upload memory usage is roughly equal to file size plus processing overhead.
+
+If multiple large uploads happen simultaneously, RAM pressure rises quickly. This is the strongest reason to move to stream-based ingestion for production.
+
+#### Throughput Estimate
+
+Upload throughput is constrained by:
+
+1. Master read speed and chunking overhead
+2. Network speed from master to storage nodes
+3. Disk write performance at each storage node
+4. Replication factor (writes multiplied by replica count)
+
+Download throughput is constrained by:
+
+1. Sequential chunk retrieval from replicas
+2. Network from storage nodes to master
+3. Master response stream speed to client
+
+---
+
+### 17.6 Performance Measurement Plan (Recommended)
+
+To report performance in an academic or project report, use a repeatable method:
+
+1. Prepare test files: 1 MB, 10 MB, 100 MB, 500 MB
+2. Run each test 5 times and average results
+3. Measure:
+   - upload latency
+   - download latency
+   - delete latency
+   - success/failure count under node failure
+4. Repeat with:
+   - all nodes healthy
+   - one node down
+5. Record node CPU, memory, and disk usage
+
+Suggested report table:
+
+| File Size | Upload Avg (ms) | Download Avg (ms) | Delete Avg (ms) | Nodes Healthy | Notes |
+|---|---:|---:|---:|---|---|
+| 1 MB | - | - | - | 3/3 | baseline |
+| 10 MB | - | - | - | 3/3 | baseline |
+| 100 MB | - | - | - | 3/3 | baseline |
+| 100 MB | - | - | - | 2/3 | one node down |
+
+---
