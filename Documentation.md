@@ -1060,3 +1060,20 @@ Current version is not fully zero-downtime ready. A practical roadmap:
 4. Add health/readiness checks to deployment platform.
 
 ---
+## 21) Known Limitations
+
+1. Master node is a single point of failure.
+2. Metadata stored in JSON file (not strongly concurrent).
+3. No background replica healing for degraded data.
+4. Upload path uses in-memory buffering.
+5. No deduplication at file-level reference tracking.
+6. Limited observability and no metrics endpoint.
+7. No user management or per-tenant isolation.
+
+### 21.1 Operational Risk Notes
+
+- If `metadata.json` is lost, chunk files remain but become hard to map back to logical files.
+- If two replica nodes both lose the same chunk, file becomes partially unreadable.
+- Because download is sequential, a single missing required chunk aborts full file transfer.
+
+---
