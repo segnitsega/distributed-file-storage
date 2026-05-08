@@ -641,3 +641,117 @@ This lowers corruption risk versus direct overwrite writes.
 - Frontend expects master API accessible on localhost port 8080 in development.
 
 ---
+## 13) Setup and Installation Guide
+
+### 13.1 Prerequisites
+
+- Node.js 18+ recommended (for native `fetch` in backend)
+- npm 9+ recommended
+- 5 terminals (3 storage nodes + 1 master + 1 frontend)
+- Available ports: `3000`, `8080`, `8081`, `8082`, `8083`
+
+### 13.2 Install Dependencies
+
+From project root:
+
+```bash
+cd backend
+npm install
+cd ../frontend
+npm install
+```
+
+### 13.3 Create Data Directories (Optional)
+
+Storage nodes can create directories automatically, but you can pre-create:
+
+```bash
+mkdir -p data/node1 data/node2 data/node3
+```
+
+On Windows PowerShell:
+
+```powershell
+New-Item -ItemType Directory -Force data/node1, data/node2, data/node3
+```
+
+---
+
+## 14) Running the System (Windows and Linux/macOS)
+
+### 14.1 Linux/macOS Commands
+
+Terminal 1:
+
+```bash
+PORT=8081 DATA_DIR=./data/node1 NODE_ID=node1 node backend/storage-node.js
+```
+
+Terminal 2:
+
+```bash
+PORT=8082 DATA_DIR=./data/node2 NODE_ID=node2 node backend/storage-node.js
+```
+
+Terminal 3:
+
+```bash
+PORT=8083 DATA_DIR=./data/node3 NODE_ID=node3 node backend/storage-node.js
+```
+
+Terminal 4:
+
+```bash
+node backend/master.js
+```
+
+Terminal 5:
+
+```bash
+cd frontend
+npm start
+```
+
+### 14.2 Windows PowerShell Commands
+
+Terminal 1:
+
+```powershell
+$env:PORT="8081"; $env:DATA_DIR="./data/node1"; $env:NODE_ID="node1"; node .\backend\storage-node.js
+```
+
+Terminal 2:
+
+```powershell
+$env:PORT="8082"; $env:DATA_DIR="./data/node2"; $env:NODE_ID="node2"; node .\backend\storage-node.js
+```
+
+Terminal 3:
+
+```powershell
+$env:PORT="8083"; $env:DATA_DIR="./data/node3"; $env:NODE_ID="node3"; node .\backend\storage-node.js
+```
+
+Terminal 4:
+
+```powershell
+node .\backend\master.js
+```
+
+Terminal 5:
+
+```powershell
+cd .\frontend
+npm start
+```
+
+### 14.3 Verification Checklist
+
+1. Open `http://localhost:3000`
+2. Confirm node health card shows 3 healthy nodes
+3. Upload a small file
+4. Confirm file appears in list
+5. Download and verify content
+6. Delete file and confirm list update
+
+---
