@@ -1077,3 +1077,57 @@ Current version is not fully zero-downtime ready. A practical roadmap:
 - Because download is sequential, a single missing required chunk aborts full file transfer.
 
 ---
+## 22) Future Enhancements
+
+### 22.1 Reliability
+
+- Master high availability with consensus metadata store.
+- Replica rebalancing and automatic repair workers.
+- Quorum-based reads/writes with configurable consistency levels.
+
+### 22.2 Security
+
+- AuthN/AuthZ, API keys, signed temporary download links.
+- Encryption at rest and in transit.
+- WAF/rate-limit and abuse detection.
+
+### 22.3 Performance
+
+- Streaming chunk upload pipeline.
+- Parallel chunk downloads with ordered merge strategy.
+- Smarter node selection based on load/latency.
+
+### 22.4 Product Features
+
+- Folder support and object metadata tags.
+- File versioning.
+- Share links with expiration.
+- Admin dashboard with node metrics.
+
+### 22.5 Architectural Evolution Roadmap
+
+#### Phase 1: Stability Hardening
+
+- Add structured logging with request IDs.
+- Add retry + timeout policy tuning.
+- Add backend integration test suite.
+
+#### Phase 2: Security and Access
+
+- Authentication and user identity.
+- RBAC or ACL for file ownership.
+- Audit trail for compliance.
+
+#### Phase 3: Scalability and HA
+
+- Replace JSON metadata with external DB.
+- Add multi-master capability.
+- Implement chunk repair and rebalancing daemon.
+
+#### Phase 4: Advanced Features
+
+- File deduplication with reference counting.
+- Tiered storage (hot/cold nodes).
+- Lifecycle policies and retention controls.
+
+---
