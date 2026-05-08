@@ -1131,3 +1131,247 @@ Current version is not fully zero-downtime ready. A practical roadmap:
 - Lifecycle policies and retention controls.
 
 ---
+## 23) Appendix (Examples and Quick Reference)
+
+### 23.1 Quick API cURL Examples
+
+#### Upload
+
+```bash
+curl -X POST "http://localhost:8080/upload" \
+  -F "file=@./sample.txt"
+```
+
+#### List Files
+
+```bash
+curl "http://localhost:8080/files"
+```
+
+#### Download
+
+```bash
+curl -L "http://localhost:8080/download/<fileId>" -o downloaded.bin
+```
+
+#### Delete
+
+```bash
+curl -X DELETE "http://localhost:8080/files/<fileId>"
+```
+
+#### Node Status
+
+```bash
+curl "http://localhost:8080/nodes/status"
+```
+
+### 23.2 Example Metadata Record
+
+```json
+{
+  "files": {
+    "9f31ecf5-1eb6-4a7e-9f8c-f4a19ec7a401": {
+      "fileName": "demo.mp4",
+      "sizeBytes": 5820012,
+      "createdAt": "2026-05-07T22:00:00.000Z",
+      "chunks": [
+        {
+          "index": 0,
+          "chunkId": "f2c7e6f1f069f66f6f5276536cb341f7f11d0fb0f7a6f95a9c7a89a9ff2d40d2",
+          "nodes": ["http://localhost:8081", "http://localhost:8082"]
+        },
+        {
+          "index": 1,
+          "chunkId": "63af8c80e4df64540fd39f73db45473480d05d8ecff8800f5fc3f4f87f6a9eb7",
+          "nodes": ["http://localhost:8082", "http://localhost:8083"]
+        }
+      ]
+    }
+  }
+}
+```
+
+### 23.3 Quick Troubleshooting Table
+
+| Symptom | Likely Cause | Action |
+|---|---|---|
+| Upload returns 503 | Insufficient healthy nodes | Start/fix storage node processes |
+| Download fails for existing file | Both replicas unavailable for a chunk | Bring node(s) back and retry |
+| Frontend API errors | Master not running or wrong proxy | Check `localhost:8080` and frontend proxy |
+| Node marked down | Health endpoint unreachable | Verify node process, port, firewall |
+| Delete partially failed | Some node delete calls failed | Retry delete or clean chunk files manually |
+
+### 23.4 Quick Command Reference
+
+Backend install:
+
+```bash
+cd backend && npm install
+```
+
+Frontend install:
+
+```bash
+cd frontend && npm install
+```
+
+Start master:
+
+```bash
+node backend/master.js
+```
+
+Start generic storage node:
+
+```bash
+PORT=8081 DATA_DIR=./data/node1 NODE_ID=node1 node backend/storage-node.js
+```
+
+Start frontend:
+
+```bash
+cd frontend && npm start
+```
+
+### 23.5 Deep Technical Appendix
+
+#### A) Chunk Placement Algorithm (Current)
+
+The current algorithm picks healthy nodes using a round-robin cursor:
+
+1. Build healthy node list from health map.
+2. If healthy node count < replication factor, fail placement.
+3. Select next `replication_factor` nodes from rolling index.
+4. Advance rolling index for next chunk.
+
+Benefits:
+
+- Fairly simple load spreading in stable cluster.
+- Easy to reason about.
+
+Trade-offs:
+
+- Does not consider node capacity or latency.
+- Does not rebalance old chunks when topology changes.
+
+#### B) Download Recovery Logic
+
+For each chunk, master loops through listed replica nodes and attempts fetch from healthy nodes first. If one fetch succeeds, streaming continues. If all attempts fail, download operation fails.
+
+This gives basic high availability but not guaranteed success under correlated failures.
+
+#### C) Metadata Write Pattern
+
+Metadata persistence writes to temporary file then renames to active file path. This pattern reduces chances of partial file persistence if process crashes during write.
+
+#### D) Storage Node Security Guard
+
+Chunk IDs must match strict SHA-256 hex regex (`^[a-f0-9]{64}$`). This blocks malicious path traversal payloads such as `../../...`.
+
+#### E) Suggested Production API Extensions
+
+1. `GET /files/:fileId` for file-level metadata details
+2. `GET /metrics` for Prometheus format metrics
+3. `POST /admin/repair/:fileId` to force replica repair
+4. `GET /admin/chunks/:chunkId` for chunk location diagnostics
+
+#### F) Suggested Error Response Standard
+
+Use standardized schema for all errors:
+
+```json
+{
+  "error": "short_error_code",
+  "message": "human readable detail",
+  "requestId": "trace id",
+  "timestamp": "ISO date-time"
+}
+```
+
+#### G) Suggested Logging Fields
+
+- timestamp
+- level
+- service (`master` or `storage-node`)
+- nodeId or host
+- requestId
+- endpoint
+- method
+- latencyMs
+- statusCode
+- errorCode
+
+#### H) Academic Report Discussion Points
+
+If this project is submitted for coursework, include:
+
+1. Why chunking and replication were chosen.
+2. Consistency vs availability behavior in failure cases.
+3. Trade-off of simple metadata JSON vs distributed metadata DB.
+4. Complexity analysis for upload/download/delete operations.
+5. Empirical results from test matrix.
+
+#### I) Complexity Notes (Approximate)
+
+- Upload:
+  - Chunking: `O(file_size)`
+  - Placement and writes: `O(num_chunks x replication_factor)`
+- Download:
+  - Fetch and stream in order: `O(file_size)` network + disk read cost
+- Delete:
+  - Replica delete operations: `O(num_chunks x replication_factor)`
+
+#### J) Data Directory Conventions
+
+Recommended convention:
+
+- `data/node1/` chunks for node1
+- `data/node2/` chunks for node2
+- `data/node3/` chunks for node3
+
+Do not manually rename chunk files. Chunk IDs must remain stable for metadata mapping.
+
+#### K) Recovery Playbook (Manual)
+
+Scenario: one storage node is rebuilt and empty.
+
+1. Restart node and ensure `/health` is green.
+2. Existing files may still work if other replicas exist.
+3. For full redundancy restoration, implement or run chunk repair process (not in current version).
+4. Until repair exists, cluster is in degraded replication state.
+
+#### L) Suggested Monitoring KPIs
+
+- upload success rate
+- download success rate
+- average upload latency
+- average download latency
+- node health ratio
+- chunk delete failure count
+- metadata write failure count
+
+#### M) Compliance and Governance Notes
+
+For enterprise-grade adaptation, add:
+
+- retention policies
+- audit trails
+- legal hold support
+- encryption key management
+- data residency controls
+
+#### N) Suggested Team Roles for Project Expansion
+
+- Backend engineer: master orchestration and metadata
+- Storage engineer: node efficiency and durability
+- Frontend engineer: UX and operations dashboard
+- DevOps engineer: deployment automation and monitoring
+- QA engineer: fault injection and regression test packs
+
+---
+
+## Conclusion
+
+This project demonstrates a clear and functional distributed file storage design with chunking, replication, and health-aware routing. It is suitable for distributed systems coursework, prototyping, and demonstration of fault-tolerant storage concepts. The next maturity step is to add production-grade security, metadata infrastructure, observability, and replication repair workflows.
+
