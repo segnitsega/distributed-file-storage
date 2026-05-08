@@ -213,3 +213,233 @@ During upload, each chunk is written to two nodes. During download, the master f
 4. **Fail-soft behavior**: graceful handling when some nodes are down.
 5. **Operational visibility**: health status endpoint and UI node status panel.
 6. **Safe persistence writes**: metadata and chunks are written via temporary file and rename strategy.
+
+---
+
+## 6) Distributed Systems Concepts Mapping
+
+This section explicitly maps core distributed systems theory to the behavior of the current implementation.
+
+### 6.1 Replication Model
+
+The system uses **synchronous write replication at application level** for each chunk:
+
+- Replication factor is fixed at `2`.
+- During upload, a chunk is written to two selected healthy nodes before considering that chunk successful.
+- Metadata stores chunk replica locations (`nodes[]`) and retrieval order is driven by this mapping.
+
+Implications:
+
+- Better read availability under single-node failures.
+- Higher write cost (`2x` chunk writes).
+- No background repair yet when replicas are degraded.
+
+### 6.2 Fault Tolerance Model
+
+Fault tolerance is achieved through:
+
+- Redundant chunk placement (replicas).
+- Continuous health checks every 5 seconds.
+- Excluding unhealthy nodes from new writes.
+- Replica fallback during reads.
+
+Current tolerance level:
+
+- Tolerates failure of one replica node for a chunk (if the second replica remains available).
+- Cannot tolerate loss of both replica locations for the same chunk.
+
+### 6.3 Consistency Model
+
+The current system follows a **single-writer metadata model** with practical, operation-level consistency:
+
+- Master is the only metadata writer.
+- On successful upload, metadata is written after chunk replicas are stored.
+- Reads are consistent with the metadata currently on disk.
+
+This behaves close to **read-after-write consistency** for successful operations through the same master instance, but it is not a formally distributed consensus-backed strong consistency system.
+
+Potential inconsistency windows:
+
+- Partial upload failure before cleanup completes.
+- Chunk state and metadata divergence during crash scenarios.
+
+### 6.4 Synchronization and Coordination
+
+Synchronization is lightweight and centralized in the master:
+
+- Node health is synchronized through periodic heartbeat-style polling (`/health`).
+- Replica placement uses a shared round-robin index in master process memory.
+- Chunk ordering is coordinated by metadata `index` during download reconstruction.
+
+Because there is only one master instance in this version, no inter-master synchronization protocol (like Raft/Zab/Paxos) is needed yet.
+
+### 6.5 Availability and Partition Tolerance
+
+From a CAP perspective:
+
+- The design prefers **availability for reads** when at least one chunk replica remains reachable.
+- Upload availability is intentionally reduced when healthy nodes are fewer than replication factor to prevent under-replicated writes.
+- Under network partition, behavior depends on which components remain reachable from the master.
+
+In short:
+
+- Read path: best-effort availability with replica retry.
+- Write path: safety-first admission control (requires enough healthy nodes).
+
+### 6.6 Failure Modes and Recovery Behavior
+
+Typical failure modes and distributed behavior:
+
+1. **One storage node down**  
+   - New uploads can continue if at least two healthy nodes remain.
+   - Downloads succeed if each chunk still has one reachable replica.
+
+2. **Two storage nodes down**  
+   - Uploads fail with `503`.
+   - Downloads may fail if required replicas are unavailable.
+
+3. **Master restart**  
+   - Metadata reloads from `metadata.json`.
+   - Cluster resumes without reindexing.
+
+4. **Metadata loss/corruption**  
+   - Chunk files may exist but logical file mapping is lost.
+   - Requires backup-based recovery.
+
+### 6.7 Durability and Data Integrity
+
+Durability mechanisms:
+
+- Chunk writes: temp file then rename on storage node.
+- Metadata writes: temp file then rename on master.
+- Chunk IDs derived from SHA-256 hash of bytes (content-derived identity).
+
+Integrity note:
+
+- End-to-end file integrity can be validated by comparing source and downloaded SHA-256 hashes.
+
+### 6.8 Scalability Characteristics
+
+Horizontal scaling exists only for storage capacity and IO at storage-node layer:
+
+- Add nodes and include them in `STORAGE_NODES`.
+- Master remains centralized and becomes the main coordination bottleneck.
+
+Scalability roadmap for full distributed maturity:
+
+- External metadata store.
+- Multi-master architecture with consensus.
+- Automated rebalance and replica repair.
+
+---
+
+## 7) Component Documentation
+
+### 7.1 Master Node (`backend/master.js`)
+
+The master node performs orchestration and serves as the system control plane.
+
+#### Responsibilities
+
+- Accept file uploads with `multer` memory storage.
+- Split uploaded file buffer into 1 MB chunks.
+- Compute SHA-256 chunk ID for every chunk.
+- Select replica nodes from currently healthy nodes.
+- Upload chunk replicas in parallel.
+- Persist file metadata to disk.
+- Serve download stream by reconstructing ordered chunks.
+- Delete file metadata and request chunk replica deletion.
+- Maintain node health map with periodic pings.
+
+#### Internal Data Structures
+
+- `metadata.files[fileId]` -> file metadata object
+- `nodeHealth` map -> `{ healthy, lastCheckedAt, lastError }`
+
+#### Important Constants
+
+- `CHUNK_SIZE_BYTES = 1MB`
+- `REPLICATION_FACTOR = 2`
+- `HEALTH_PING_INTERVAL_MS = 5000`
+
+### 7.2 Storage Node (`backend/storage-node.js`)
+
+Storage nodes provide chunk-level durability.
+
+#### Responsibilities
+
+- Validate chunk ID format (`64 hex chars`)
+- Save chunk binary payload to local file
+- Stream chunk back to caller
+- Delete chunk file
+- Report health (`/health`)
+
+#### File Write Safety
+
+Chunk writes use temp files followed by rename. This reduces risk of exposing partial files if write is interrupted.
+
+### 7.3 Frontend (`frontend/src/App.js`)
+
+The React UI gives a minimal but useful operator interface.
+
+#### Features
+
+- Select and upload a file.
+- List uploaded files with:
+  - Name
+  - File ID
+  - Size
+  - Chunk count
+- Download file by ID.
+- Delete file by ID.
+- Display healthy vs total storage node count.
+- Auto-refresh files and node status every 5 seconds.
+
+#### UX Behavior Notes
+
+- Upload button disabled when no file selected.
+- Errors shown in a visible error panel.
+- Manual refresh button available in addition to polling.
+
+---
+
+## 8) Data Model and Metadata Design
+
+### 8.1 Metadata File
+
+Path default: `backend/metadata.json`  
+Override with: `METADATA_PATH`
+
+### 8.2 Schema (Conceptual)
+
+```json
+{
+  "files": {
+    "<fileId>": {
+      "fileName": "example.pdf",
+      "sizeBytes": 1234567,
+      "createdAt": "2026-05-07T20:00:00.000Z",
+      "chunks": [
+        {
+          "index": 0,
+          "chunkId": "<sha256hex>",
+          "nodes": ["http://localhost:8081", "http://localhost:8082"]
+        }
+      ]
+    }
+  }
+}
+```
+
+### 8.3 Metadata Lifecycle
+
+- Created/updated after successful upload.
+- Read during list/download/delete operations.
+- Updated after delete completion.
+- Stored on local disk, not a separate database.
+
+### 8.4 Chunk Identity
+
+Each chunk ID is SHA-256 digest of chunk bytes. This gives content-based identifiers and strict naming compatibility.
+
+---
