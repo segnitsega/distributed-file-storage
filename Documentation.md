@@ -110,3 +110,18 @@
       - 23.5 Deep Technical Appendix  
 
 ---
+## 1) Introduction
+
+This project implements a **distributed file sharing/storage system** that stores uploaded files as fixed-size chunks across multiple storage nodes. Instead of saving one complete file in one location, the master server splits each file into parts and replicates each part across multiple storage nodes. This approach improves reliability and provides a foundation for scaling out storage capacity.
+
+The system contains two major layers:
+
+- A **backend layer** composed of:
+  - One **Master Node** (orchestrator, metadata owner, API gateway)
+  - Multiple **Storage Nodes** (chunk persistence and retrieval)
+- A **frontend layer**:
+  - A React web application for upload/download/delete and node health visibility
+
+The implementation focuses on simplicity and educational clarity while still including core distributed system behaviors such as health checks, replication, and retry logic.
+
+---
