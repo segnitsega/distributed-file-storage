@@ -125,3 +125,91 @@ The system contains two major layers:
 The implementation focuses on simplicity and educational clarity while still including core distributed system behaviors such as health checks, replication, and retry logic.
 
 ---
+## 2) Problem Statement and Objectives
+
+### 2.1 Problem Statement
+
+Traditional single-server file storage systems can fail if that server becomes unavailable. They also become difficult to scale as storage and traffic grow. The project addresses this by distributing file chunks across independent storage nodes and keeping replicas to survive node failures.
+
+### 2.2 Core Objectives
+
+1. Allow users to upload and download files through a single master endpoint.
+2. Split files into fixed-size chunks for easier distribution.
+3. Store each chunk on more than one storage node (replication).
+4. Maintain metadata mapping file IDs to chunk IDs and their node locations.
+5. Track node health and avoid unhealthy nodes during uploads.
+6. Retry alternate replicas during download if a node is unavailable.
+7. Provide a simple frontend for operational visibility and user actions.
+
+### 2.3 Non-Goals (Current Version)
+
+- User authentication/authorization
+- End-to-end encryption at rest
+- Dynamic rebalancing and self-healing replication repair
+- Multi-master metadata service
+- Cloud-native orchestration (Kubernetes) out of the box
+
+---
+
+## 3) System Overview
+
+The system uses a **master-worker architecture**:
+
+- The **Master Node** receives upload requests, splits files into 1 MB chunks, replicates chunks to storage nodes, and records metadata.
+- **Storage Nodes** are lightweight HTTP services storing binary chunk files in local directories.
+- The **Frontend** communicates only with the master API and does not interact directly with storage nodes.
+
+### 3.1 Key Runtime Defaults
+
+- Master port: `8080`
+- Storage ports: `8081`, `8082`, `8083` (default list)
+- Chunk size: `1 MB`
+- Replication factor: `2`
+- Health check interval: `5 seconds`
+
+### 3.2 Primary APIs
+
+- Upload file: `POST /upload`
+- Download file: `GET /download/:fileId`
+- List files: `GET /files`
+- Delete file: `DELETE /files/:fileId`
+- Nodes status: `GET /nodes/status`
+- Storage node health: `GET /health`
+
+---
+
+## 4) High-Level Architecture
+
+### 4.1 Logical Diagram (Text)
+
+User Browser (React UI)  
+-> Master Node (Express API + Metadata + Chunk Orchestration)  
+-> Storage Node A (chunk files)  
+-> Storage Node B (chunk files)  
+-> Storage Node C (chunk files)
+
+During upload, each chunk is written to two nodes. During download, the master fetches chunks in order and tries replicas if needed.
+
+### 4.2 Communication Pattern
+
+- Frontend <-> Master: JSON APIs + file upload form data + download stream
+- Master <-> Storage Nodes: HTTP binary chunk transfer (`PUT`, `GET`, `DELETE`)
+- Master <-> Metadata: local JSON file (`metadata.json`)
+
+### 4.3 Why This Architecture Works
+
+- Centralized metadata simplifies request routing.
+- Decentralized chunk storage reduces single-point data concentration.
+- Replication improves read availability when one node fails.
+- HTTP makes components easy to run and test independently.
+
+---
+
+## 5) Design Principles
+
+1. **Simplicity first**: clear, understandable code path for educational and project use.
+2. **Loose coupling**: storage nodes expose minimal APIs and stay stateless about file-level context.
+3. **Deterministic chunk IDs**: SHA-256 hash per chunk.
+4. **Fail-soft behavior**: graceful handling when some nodes are down.
+5. **Operational visibility**: health status endpoint and UI node status panel.
+6. **Safe persistence writes**: metadata and chunks are written via temporary file and rename strategy.
