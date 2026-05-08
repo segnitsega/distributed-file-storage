@@ -907,3 +907,88 @@ Suggested report table:
 | 100 MB | - | - | - | 2/3 | one node down |
 
 ---
+## 18) Security Considerations
+
+### 18.1 Implemented Safeguards
+
+- Chunk ID validation on storage nodes prevents path traversal.
+- File size upload limit via `MAX_UPLOAD_BYTES`.
+- CORS middleware enabled for frontend development.
+- Temporary-file write pattern reduces incomplete write exposure.
+
+### 18.2 Security Gaps (Current)
+
+- No authentication and authorization.
+- No transport encryption (plain HTTP).
+- No malware scanning or file type restriction.
+- No rate limiting or abuse protection.
+- No signed URLs or access control on downloads/deletes.
+
+### 18.3 Recommended Hardening
+
+1. Add JWT/session authentication.
+2. Add role-based authorization for delete/admin actions.
+3. Enable HTTPS with reverse proxy (Nginx/Caddy).
+4. Add request throttling and per-IP upload controls.
+5. Add audit logs for upload/download/delete events.
+
+---
+
+## 19) Testing Strategy
+
+### 19.1 Existing Tests
+
+- Frontend includes CRA test scaffold and testing-library dependencies.
+- Current default test file may require update to match current UI text.
+
+### 19.2 Manual Test Cases
+
+1. Upload small text file and verify download integrity.
+2. Upload file larger than 1 MB and verify chunk count > 1.
+3. Stop one storage node and verify:
+   - Existing file download still works (if replica available)
+   - New uploads fail if healthy nodes < 2
+4. Delete file and verify chunk file cleanup.
+5. Restart master and verify metadata persistence.
+
+### 19.3 Automated Testing Suggestions
+
+- Unit tests:
+  - chunking utility
+  - node selection logic
+  - metadata load/save behavior
+- Integration tests:
+  - upload->download->delete full flow
+  - failure injection (node down)
+- Frontend tests:
+  - upload form interaction
+  - file list rendering
+  - error UI rendering
+
+### 19.4 Example Test Matrix
+
+| Test ID | Category | Scenario | Expected Result |
+|---|---|---|---|
+| T-01 | Upload | Upload small file (<1 MB) | Success, 1 chunk, 2 replicas |
+| T-02 | Upload | Upload medium file (5 MB) | Success, multiple chunks, metadata saved |
+| T-03 | Upload | Missing file field | HTTP 400 |
+| T-04 | Upload | Only 1 healthy node | HTTP 503 |
+| T-05 | Download | Download existing file, all nodes healthy | Full file returned correctly |
+| T-06 | Download | One replica node down | Download succeeds via alternate replica |
+| T-07 | Download | File ID not found | HTTP 404 |
+| T-08 | Delete | Delete existing file | Metadata removed, chunk deletion attempted |
+| T-09 | Delete | Delete already deleted file | HTTP 404 |
+| T-10 | Node API | Invalid chunk ID format | HTTP 400 on storage node |
+
+### 19.5 Data Integrity Validation Procedure
+
+For stronger verification in documentation/report:
+
+1. Before upload, compute source file SHA-256 hash.
+2. Upload and then download same file.
+3. Compute SHA-256 hash of downloaded file.
+4. Compare both hashes.
+
+If hashes match, end-to-end integrity is confirmed for that test case.
+
+---
