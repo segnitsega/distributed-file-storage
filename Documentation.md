@@ -992,3 +992,71 @@ For stronger verification in documentation/report:
 If hashes match, end-to-end integrity is confirmed for that test case.
 
 ---
+## 20) Deployment Guidance
+
+### 20.1 Development Deployment
+
+- Run all services on one machine with separate ports.
+- Use frontend development server proxy to master.
+
+### 20.2 Multi-Host Deployment (Simple)
+
+1. Deploy storage nodes on separate hosts.
+2. Expose each storage node on reachable URL.
+3. Set master `STORAGE_NODES` to those URLs.
+4. Expose master behind reverse proxy.
+5. Serve frontend build as static assets.
+
+### 20.3 Production Checklist
+
+- Process management (PM2/systemd/container runtime)
+- HTTPS termination
+- Centralized logs
+- Health monitoring and alerting
+- Metadata backup strategy
+- Firewall rules for internal node traffic
+
+### 20.4 Containerization Blueprint
+
+This project can be containerized into:
+
+- 1 container: master
+- N containers: storage nodes
+- 1 container: frontend static build or dev server
+
+Recommended network model:
+
+- Internal network for master <-> storage nodes
+- External access only to frontend and master API gateway
+- Restrict direct storage node exposure unless required
+
+Volume mapping:
+
+- Master volume: metadata file persistence
+- Storage node volumes: chunk directories
+
+### 20.5 Backup and Restore Strategy
+
+Current system requires two layers of backup:
+
+1. `metadata.json` backup (master index)
+2. Node chunk directory backup
+
+Restore order:
+
+1. Restore chunk directories to storage nodes.
+2. Restore `metadata.json` on master.
+3. Start services and validate with random file downloads.
+
+If metadata and chunk data are inconsistent, some downloads may fail.
+
+### 20.6 Zero-Downtime Improvement Path
+
+Current version is not fully zero-downtime ready. A practical roadmap:
+
+1. Introduce load balancer in front of master replicas.
+2. Move metadata to shared transactional data store.
+3. Use rolling restart for storage nodes.
+4. Add health/readiness checks to deployment platform.
+
+---
