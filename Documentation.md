@@ -443,3 +443,201 @@ Override with: `METADATA_PATH`
 Each chunk ID is SHA-256 digest of chunk bytes. This gives content-based identifiers and strict naming compatibility.
 
 ---
+## 9) Detailed API Documentation
+
+Base URL (master): `http://localhost:8080`
+
+### 9.1 `GET /nodes/status`
+
+Returns health snapshot of configured storage nodes.
+
+#### Response (200)
+
+```json
+{
+  "nodes": [
+    {
+      "url": "http://localhost:8081",
+      "healthy": true,
+      "lastCheckedAt": 1746650000000
+    }
+  ],
+  "checkedEveryMs": 5000
+}
+```
+
+### 9.2 `GET /files`
+
+Lists uploaded files known to metadata.
+
+#### Response (200)
+
+```json
+{
+  "files": [
+    {
+      "fileId": "uuid",
+      "fileName": "sample.txt",
+      "sizeBytes": 1200,
+      "chunkCount": 1,
+      "createdAt": "2026-05-07T21:00:00.000Z"
+    }
+  ]
+}
+```
+
+### 9.3 `POST /upload`
+
+Uploads a file in multipart/form-data under field name `file`.
+
+#### Request
+
+- Content type: `multipart/form-data`
+- Field: `file`
+
+#### Success Response (201)
+
+```json
+{
+  "fileId": "uuid",
+  "fileName": "archive.zip",
+  "sizeBytes": 5340000,
+  "chunkCount": 6
+}
+```
+
+#### Common Errors
+
+- `400`: missing `file` field
+- `503`: not enough healthy nodes for replication
+- `500`: chunk distribution failure
+
+### 9.4 `GET /download/:fileId`
+
+Returns binary stream with `Content-Disposition` filename attachment.
+
+#### Success
+
+- Status: `200`
+- Content type: `application/octet-stream`
+
+#### Errors
+
+- `404`: file ID not found
+- `500`: chunk retrieval failure (all replicas failed for a required chunk)
+
+### 9.5 `DELETE /files/:fileId`
+
+Deletes metadata and requests replica chunk deletion.
+
+#### Success Response (200)
+
+```json
+{
+  "ok": true,
+  "fileId": "uuid",
+  "chunkDeletesAttempted": 8,
+  "chunkDeletesFailed": 0
+}
+```
+
+#### Error
+
+- `404`: file not found
+
+---
+
+## 10) End-to-End Workflows
+
+### 10.1 Upload Workflow
+
+1. User selects file in UI and submits.
+2. Frontend sends multipart request to `/upload`.
+3. Master verifies enough healthy nodes (`>= 2`).
+4. Master generates `fileId` (UUID).
+5. File is split into 1 MB chunks.
+6. For each chunk:
+   - Compute SHA-256 `chunkId`
+   - Pick two healthy nodes (round robin)
+   - Upload chunk to both nodes in parallel
+7. Master stores metadata for file and chunks.
+8. Master returns upload result to frontend.
+9. UI refreshes file list and node status.
+
+### 10.2 Download Workflow
+
+1. User clicks download for a file.
+2. Browser requests `/download/:fileId`.
+3. Master loads file metadata and sets download headers.
+4. For each chunk (ordered by index):
+   - Try replica node 1 if healthy
+   - If failed, try replica node 2
+   - Write chunk bytes to response stream
+5. Master ends stream after final chunk.
+6. Browser saves file using server filename header.
+
+### 10.3 Delete Workflow
+
+1. User clicks delete.
+2. Frontend sends `DELETE /files/:fileId`.
+3. Master reads chunk list from metadata.
+4. Master issues replica chunk delete requests.
+5. Master removes file from metadata.
+6. Response includes delete attempts and failures.
+
+---
+
+## 11) Fault Tolerance and Reliability
+
+### 11.1 Node Health Monitoring
+
+- Master pings `/health` on each storage node every 5 seconds.
+- Health map is used by upload and download paths.
+- Unhealthy nodes are excluded from upload replica selection.
+
+### 11.2 Replica Retry on Read
+
+During download, if one replica fetch fails, master attempts the other replica. This protects reads from single-node failures when at least one replica remains available.
+
+### 11.3 Upload Admission Control
+
+If fewer than replication-factor healthy nodes exist, uploads are rejected with `503` to avoid under-replicated data.
+
+### 11.4 Best-Effort Rollback
+
+If upload fails after some chunks were already stored, master attempts cleanup by deleting uploaded replicas for chunks recorded so far.
+
+### 11.5 Persistence Safety
+
+- Metadata writes: write temporary JSON file then rename.
+- Chunk writes: write temporary chunk file then rename.
+
+This lowers corruption risk versus direct overwrite writes.
+
+---
+
+## 12) Environment Variables and Configuration
+
+### 12.1 Master Variables
+
+| Variable | Default | Description |
+|---|---|---|
+| `PORT` | `8080` | Master service port |
+| `STORAGE_NODES` | `http://localhost:8081,http://localhost:8082,http://localhost:8083` | Comma-separated storage node URLs |
+| `METADATA_PATH` | `backend/metadata.json` | Metadata JSON file path |
+| `MAX_UPLOAD_BYTES` | `1073741824` (1 GB) | Maximum upload size |
+
+### 12.2 Storage Node Variables
+
+| Variable | Default | Description |
+|---|---|---|
+| `PORT` | `8081` | Storage node port |
+| `DATA_DIR` | `data/node-<PORT>` | Chunk storage directory |
+| `NODE_ID` | `node-<PORT>` | Node identifier for logs |
+
+### 12.3 Frontend Configuration
+
+- `frontend/package.json` uses `"proxy": "http://localhost:8080"`.
+- Frontend expects master API accessible on localhost port 8080 in development.
+
+---
